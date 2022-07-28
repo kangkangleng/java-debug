@@ -5,7 +5,7 @@
     <parent>
         <groupId>com.microsoft.java</groupId>
         <artifactId>java-debug-parent</artifactId>
-        <version>0.36.0</version>
+        <version>0.39.0</version>
     </parent>
     <artifactId>com.microsoft.java.debug.plugin</artifactId>
     <packaging>eclipse-plugin</packaging>
@@ -46,7 +46,7 @@
                         <artifactItem>
                             <groupId>org.reactivestreams</groupId>
                             <artifactId>reactive-streams</artifactId>
-                            <version>1.0.3</version>
+                            <version>1.0.4</version>
                         </artifactItem>
                         <artifactItem>
                             <groupId>commons-io</groupId>
@@ -56,7 +56,7 @@
                         <artifactItem>
                             <groupId>com.microsoft.java</groupId>
                             <artifactId>com.microsoft.java.debug.core</artifactId>
-                            <version>0.36.0</version>
+                            <version>0.39.0</version>
                         </artifactItem>
                     </artifactItems>
                 </configuration>

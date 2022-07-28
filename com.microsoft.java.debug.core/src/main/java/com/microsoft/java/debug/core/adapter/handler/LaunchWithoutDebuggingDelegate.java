@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright (c) 2018 Microsoft Corporation and others.
+* Copyright (c) 2018-2022 Microsoft Corporation and others.
 * All rights reserved. This program and the accompanying materials
 * are made available under the terms of the Eclipse Public License v1.0
 * which accompanies this distribution, and is available at
@@ -40,7 +40,6 @@ import com.sun.jdi.connect.VMStartException;
 
 public class LaunchWithoutDebuggingDelegate implements ILaunchDelegate {
     protected static final Logger logger = Logger.getLogger(Configuration.LOGGER_NAME);
-    protected static final String TERMINAL_TITLE = "Java Process Console";
     protected static final long RUNINTERMINAL_TIMEOUT = 10 * 1000;
     private Consumer<IDebugAdapterContext> terminateHandler;
 
@@ -92,14 +91,16 @@ public class LaunchWithoutDebuggingDelegate implements ILaunchDelegate {
 
         final String launchInTerminalErrorFormat = "Failed to launch debuggee in terminal. Reason: %s";
 
+        final String[] names = launchArguments.mainClass.split("[/\\.]");
+        final String terminalName = "Run: " + names[names.length - 1];
         String[] cmds = LaunchRequestHandler.constructLaunchCommands(launchArguments, false, null);
         RunInTerminalRequestArguments requestArgs = null;
         if (launchArguments.console == CONSOLE.integratedTerminal) {
             requestArgs = RunInTerminalRequestArguments.createIntegratedTerminal(cmds, launchArguments.cwd,
-                    launchArguments.env, TERMINAL_TITLE);
+                    launchArguments.env, terminalName);
         } else {
             requestArgs = RunInTerminalRequestArguments.createExternalTerminal(cmds, launchArguments.cwd,
-                    launchArguments.env, TERMINAL_TITLE);
+                    launchArguments.env, terminalName);
         }
         Request request = new Request(Command.RUNINTERMINAL.getName(),
                 (JsonObject) JsonUtils.toJsonTree(requestArgs, RunInTerminalRequestArguments.class));
@@ -114,20 +115,32 @@ public class LaunchWithoutDebuggingDelegate implements ILaunchDelegate {
         context.getProtocolServer().sendRequest(request, RUNINTERMINAL_TIMEOUT).whenComplete((runResponse, ex) -> {
             if (runResponse != null) {
                 if (runResponse.success) {
+                    ProcessHandle debuggeeProcess = null;
                     try {
                         RunInTerminalResponseBody terminalResponse = JsonUtils.fromJson(
                             JsonUtils.toJson(runResponse.body), RunInTerminalResponseBody.class);
                         context.setProcessId(terminalResponse.processId);
                         context.setShellProcessId(terminalResponse.shellProcessId);
+
+                        if (terminalResponse.processId > 0) {
+                            debuggeeProcess = ProcessHandle.of(terminalResponse.processId).orElse(null);
+                        } else if (terminalResponse.shellProcessId > 0) {
+                            debuggeeProcess = LaunchUtils.findJavaProcessInTerminalShell(terminalResponse.shellProcessId, cmds[0], 3000);
+                        }
+
+                        if (debuggeeProcess != null) {
+                            context.setProcessId(debuggeeProcess.pid());
+                            debuggeeProcess.onExit().thenAcceptAsync(proc -> {
+                                context.getProtocolServer().sendEvent(new Events.TerminatedEvent());
+                            });
+                        }
                     } catch (JsonSyntaxException e) {
                         logger.severe("Failed to resolve runInTerminal response: " + e.toString());
                     }
 
-                    // TODO: Since the RunInTerminal request will return the pid or parent shell
-                    // pid now, the debugger is able to use this pid to  monitor the lifecycle
-                    // of the running Java process. There is no need to terminate the debug
-                    // session early here.
-                    context.getProtocolServer().sendEvent(new Events.TerminatedEvent());
+                    if (debuggeeProcess == null || !debuggeeProcess.isAlive()) {
+                        context.getProtocolServer().sendEvent(new Events.TerminatedEvent());
+                    }
                     resultFuture.complete(response);
                 } else {
                     resultFuture.completeExceptionally(
